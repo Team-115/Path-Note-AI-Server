@@ -1,0 +1,81 @@
+[project]
+name = "travel_ai_backend"
+version = "0.1.0"
+description = "AI-powered semantic search API for travel platforms"
+requires-python = ">=3.11"
+authors = [
+    { name = "Team-115", email = "24528@naver.com" }
+]
+
+# 핵심 의존성만 포함
+dependencies = [
+    # 웹 프레임워크
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # 데이터베이스
+    "sqlalchemy>=2.0.0",
+    "supabase>=2.4.0",
+    "asyncpg>=0.29.0",
+    "pgvector>=0.2.4",
+    
+    # 환경 설정
+    "python-dotenv>=1.0.0",
+    
+    # HTTP 클라이언트
+    "httpx>=0.26.0",
+    
+    # 보안
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+]
+
+[project.optional-dependencies]
+# 개발 도구
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.1.0",
+    "black>=24.0.0",
+    "mypy>=1.8.0",
+]
+
+# ML 모델
+ml = [
+    "sentence-transformers>=2.3.0",
+    "torch>=2.1.0",
+    "numpy>=1.26.0",
+]
+
+# 모든 추가 의존성
+all = [
+    "travel-ai-backend[dev,ml]"
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# setuptools를 사용한 간단한 설정
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "routes*", "services*", "models*"]
+
+# 코드 포맷팅 설정
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "W", "F", "I", "B"]  # 기본적인 린팅 규칙만
+ignore = ["E501"]  # 라인 길이 제한 무시
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+# 테스트 설정
+[tool.pytest.ini_options]
+addopts = "-ra -q --asyncio-mode=auto"
+testpaths = ["tests"]
+pythonpath = ["."]
