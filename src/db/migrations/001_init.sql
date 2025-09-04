@@ -2,233 +2,150 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+
+-- 1. 장소 패턴 테이블 (순서 및 조합 기반 추천)
+CREATE TABLE place_patterns (
+    id SERIAL PRIMARY KEY,
+    poi_ids INTEGER[] NOT NULL UNIQUE,  -- 장소 ID 배열 (순서 유지)
+
+    -- 사용 통계
+    sequence_count INTEGER DEFAULT 0,     -- 이 순서로 방문한 횟수
+    relation_count INTEGER DEFAULT 0,
+    total_usage INTEGER GENERATED ALWAYS AS (sequence_count + relation_count) STORED,       -- 이 조합 총 방문 횟수
+
+    -- 점수 (계산된 값)
+    sequence_score FLOAT DEFAULT 0.0,      -- 순서 추천 점수
+    relation_score FLOAT DEFAULT 0.0,      -- 관계 추천 점수
+
+    -- 메타데이터 (검색 최적화용)
+    pattern_length SMALLINT GENERATED ALWAYS AS (array_length(poi_ids, 1)) STORED,
+    first_poi INTEGER GENERATED ALWAYS AS (poi_ids[1]) STORED,  -- 시작 POI (인덱스용)
+    last_poi INTEGER GENERATED ALWAYS AS (poi_ids[array_length(poi_ids, 1)]) STORED,  -- 마지막 POI
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
 -- 1. 코스 벡터 테이블 (의미 기반 검색)
 CREATE TABLE IF NOT EXISTS course_vectors (
     id SERIAL PRIMARY KEY,
     mysql_course_id INTEGER UNIQUE NOT NULL,
 
-    -- 다각도 의미 검색(제목+설명+카테고리)
-    title_embedding vector(768),        -- 제목 임베딩
-    description_embedding vector(768),   -- 설명 임베딩
-    combined_embedding vector(768),      -- 통합 임베딩 (제목+설명+카테고리)
+    -- 의미 검색용 임베딩 (정규화된 벡터만 저장)
+    title_embedding vector(768),
+    description_embedding vector(768), 
+    combined_embedding vector(768),
+
+    -- 패턴 참조
+    main_pattern_id INTEGER REFERENCES place_patterns(id) ON DELETE SET NULL, -- 메인 패턴
+    sub_pattern_ids INTEGER[],                             -- 서브 패턴들 (부분 패턴)
 
     -- 하이브리드 검색용 (벡터 + 필터)
     region VARCHAR(50),
-    duration_minutes INTEGER, -- minutes
-
-    -- 의미 검색용 메타데이터
-    semantic_tags vector(768),          -- 태그 통합 임베딩
-    user_profile_embedding vector(768),  -- 타겟 사용자 프로필 임베딩
-
-    -- 검색 최적화용 정규화된 벡터 (코사인 유사도 최적화)
-    title_embedding_norm vector(768),
-    description_embedding_norm vector(768),
-    combined_embedding_norm vector(768),
-    
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. 장소 벡터 테이블 (의미 기반 장소 추천)
-CREATE TABLE place_vectors (
-    id SERIAL PRIMARY KEY,
-    poi_id INTEGER UNIQUE NOT NULL,
-    
-    -- 장소 임베딩
-    place_embedding vector(768),         -- 장소명 + 카테고리 임베딩
-    context_embedding vector(768),       -- 주변 맥락 임베딩
-    
-    -- 위치 벡터 (지리적 유사도)
-    -- 2D 벡터로 위도/경도를 정규화하여 저장
-    location_vector vector(2),           -- [normalized_lat, normalized_lng]
-    latitude DECIMAL(10, 8),    -- 실제 좌표(거리계산용)
-    longitude DECIMAL(11, 8),
-    
-    -- 시간대별 임베딩 (시간 맥락 추천)
-    morning_embedding vector(768),       -- 아침 문맥 임베딩
-    afternoon_embedding vector(768),     -- 오후 문맥 임베딩
-    evening_embedding vector(768),       -- 저녁 문맥 임베딩
-    
-    -- 하이브리드 검색용
     category VARCHAR(100),
-    region VARCHAR(50),
-    popularity_score FLOAT DEFAULT 0,
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. 사용자 선호 벡터 (개인화 추천)
-CREATE TABLE user_preference_vectors (
+CREATE TABLE IF NOT EXISTS user_preference_vectors (
     id SERIAL PRIMARY KEY,
     mysql_user_id INTEGER UNIQUE NOT NULL,
     
-    -- 사용자 선호도 임베딩 (학습된)
-    preference_embedding vector(768),     -- 전체 선호도
+    -- 사용자 선호도 임베딩
+    preference_embedding vector(768),         -- 전체 선호도
+    category_preference_embedding vector(768), -- 카테고리별 선호
+    behavior_embedding vector(768),           -- 행동 패턴
     
-    -- 카테고리별 선호 벡터
-    category_preference_embedding vector(768),
     
-    -- 행동 패턴 임베딩
-    behavior_embedding vector(768),       -- 검색/클릭 패턴 기반
-    
-    -- 동적 컨텍스트 임베딩
-    recent_context_embedding vector(768), -- 최근 활동 기반
-    
-    -- 선호도 강도 (가중치)
-    preference_weights JSONB DEFAULT '{}',
+    -- 선호도 가중치 (0.0 ~ 1.0)
+    preference_weight FLOAT DEFAULT 0.4,
+    category_weight FLOAT DEFAULT 0.3,
+    behavior_weight FLOAT DEFAULT 0.3,
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. 코스 패턴 벡터 (순서 패턴 학습)
-CREATE TABLE vector_patterns (
+-- 4. 코스 반응 테이블 (패턴 가중치 조정용)
+CREATE TABLE IF NOT EXISTS course_reactions (
     id SERIAL PRIMARY KEY,
+    mysql_user_id INTEGER NOT NULL,
+    mysql_course_id INTEGER NOT NULL,
     
-    -- 패턴 식별
-    pattern_key VARCHAR(255) UNIQUE NOT NULL,  -- 'seq:101-102-103' or 'rel:101-102'
-    pattern_type VARCHAR(50) NOT NULL,  -- 'sequence_full', 'sequence_partial', 'relation'
+    -- 반응 정보
+    reaction_type VARCHAR(50) NOT NULL CHECK (
+        reaction_type IN ('like', 'save', 'share')
+    ),
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
     
-    -- 데이터
-    items INTEGER[] NOT NULL,
-    items_length INTEGER GENERATED ALWAYS AS (array_length(items, 1)) STORED,
-    embedding vector(768),
+    -- 가중치 계산 정보
+    weight_applied BOOLEAN DEFAULT FALSE,
+    weight_value FLOAT DEFAULT 0.0,                      -- 적용된 가중치 값
     
-    -- 학습 정보
-    occurrence_count INTEGER DEFAULT 1,
-    confidence FLOAT DEFAULT 0.5 CHECK (confidence >= 0 AND confidence <= 1),
-    
-    -- 메타데이터
-    metadata JSONB DEFAULT '{}',
-
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    
+    -- 중복 방지
+    UNIQUE(mysql_user_id, mysql_course_id, reaction_type)
 );
 
--- =====================================================
--- 1. course_vectors 인덱스
--- =====================================================
+-- 1. place_patterns 인덱스 (패턴 검색 최적화)
+CREATE INDEX idx_place_patterns_poi_ids ON place_patterns USING gin(poi_ids);
+CREATE INDEX idx_place_patterns_first_poi ON place_patterns(first_poi, sequence_score DESC);
+CREATE INDEX idx_place_patterns_last_poi ON place_patterns(last_poi);
+CREATE INDEX idx_place_patterns_length_score ON place_patterns(pattern_length, total_usage DESC);
 
--- 벡터 검색 인덱스 (IVFFlat - 빠른 근사 검색)
-CREATE INDEX idx_course_title_emb 
-    ON course_vectors USING ivfflat (title_embedding vector_cosine_ops) 
-    WITH (lists = 100);
 
-CREATE INDEX idx_course_desc_emb 
-    ON course_vectors USING ivfflat (description_embedding vector_cosine_ops) 
-    WITH (lists = 100);
+-- 패턴 점수별 정렬 (추천용)
+CREATE INDEX idx_place_patterns_sequence_score ON place_patterns(sequence_score DESC) WHERE sequence_count > 0;
+CREATE INDEX idx_place_patterns_relation_score ON place_patterns(relation_score DESC) WHERE relation_count > 0;
 
-CREATE INDEX idx_course_combined_emb 
-    ON course_vectors USING ivfflat (combined_embedding vector_cosine_ops) 
-    WITH (lists = 100);
+-- 2. course_vectors 벡터 검색 인덱스 (HNSW)
+CREATE INDEX idx_course_combined_embedding 
+    ON course_vectors USING hnsw (combined_embedding vector_cosine_ops) 
+    WITH (m = 16, ef_construction = 64);
 
--- 정규화된 벡터 인덱스 (내적 연산용)
-CREATE INDEX idx_course_title_norm 
-    ON course_vectors USING ivfflat (title_embedding_norm vector_ip_ops) 
-    WITH (lists = 100);
+CREATE INDEX idx_course_title_embedding 
+    ON course_vectors USING hnsw (title_embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
-CREATE INDEX idx_course_combined_norm 
-    ON course_vectors USING ivfflat (combined_embedding_norm vector_ip_ops) 
-    WITH (lists = 100);
+-- 패턴 참조 인덱스
+CREATE INDEX idx_course_main_pattern ON course_vectors(main_pattern_id) WHERE main_pattern_id IS NOT NULL;
+CREATE INDEX idx_course_sub_patterns ON course_vectors USING gin(sub_pattern_ids);
 
--- 필터링용 인덱스
-CREATE INDEX idx_course_region ON course_vectors(region);
-CREATE INDEX idx_course_duration ON course_vectors(duration_minutes);
--- CREATE INDEX idx_course_price ON course_vectors(price_level); -- price_level column not defined
+-- 하이브리드 검색용 복합 인덱스
+CREATE INDEX idx_course_region_category ON course_vectors(region, category);
+CREATE INDEX idx_course_difficulty_duration ON course_vectors(difficulty_level, duration_minutes);
 
--- 복합 인덱스 (자주 함께 사용되는 필터)
-CREATE INDEX idx_course_region_duration 
-    ON course_vectors(region, duration_minutes);
-
--- 유니크 제약
-CREATE UNIQUE INDEX idx_course_mysql_id ON course_vectors(mysql_course_id);
-
--- =====================================================
--- 2. place_vectors 인덱스
--- =====================================================
-
--- 벡터 검색 인덱스
-CREATE INDEX idx_place_emb 
-    ON place_vectors USING ivfflat (place_embedding vector_cosine_ops) 
-    WITH (lists = 100);
-
-CREATE INDEX idx_place_context_emb 
-    ON place_vectors USING ivfflat (context_embedding vector_cosine_ops) 
-    WITH (lists = 100);
-
--- 위치 벡터 인덱스 (L2 거리)
-CREATE INDEX idx_place_location 
-    ON place_vectors USING ivfflat (location_vector vector_l2_ops) 
-    WITH (lists = 50);
-
--- 시간대별 임베딩 인덱스 (선택적)
-CREATE INDEX idx_place_morning_emb 
-    ON place_vectors USING ivfflat (morning_embedding vector_cosine_ops) 
-    WITH (lists = 50);
-
--- 지리적 검색용 인덱스
-CREATE INDEX idx_place_coords ON place_vectors(latitude, longitude);
-CREATE INDEX idx_place_region_category ON place_vectors(region, category);
-
--- 인기도 인덱스
-CREATE INDEX idx_place_popularity ON place_vectors(popularity_score DESC);
-
--- 유니크 제약
-CREATE UNIQUE INDEX idx_place_poi_id ON place_vectors(poi_id);
-
--- =====================================================
 -- 3. user_preference_vectors 인덱스
--- =====================================================
+CREATE INDEX idx_user_preference_embedding 
+    ON user_preference_vectors USING hnsw (preference_embedding vector_cosine_ops)
+    WITH (m = 8, ef_construction = 32);  -- 사용자 데이터는 상대적으로 적으므로 작은 값
 
--- 벡터 검색 인덱스 (사용자 수가 적으므로 lists 작게)
-CREATE INDEX idx_user_pref_emb 
-    ON user_preference_vectors USING ivfflat (preference_embedding vector_cosine_ops) 
-    WITH (lists = 10);
+CREATE INDEX idx_user_last_interaction ON user_preference_vectors(last_interaction_at DESC);
 
-CREATE INDEX idx_user_category_emb 
-    ON user_preference_vectors USING ivfflat (category_preference_embedding vector_cosine_ops) 
-    WITH (lists = 10);
+-- 4. course_reactions 인덱스 (배치 처리 최적화)
+CREATE INDEX idx_reactions_unprocessed ON course_reactions(weight_applied, created_at) 
+    WHERE weight_applied = FALSE;
 
--- 메타데이터 인덱스
-CREATE INDEX idx_user_updated ON user_preference_vectors(updated_at DESC);
-CREATE INDEX idx_user_interactions ON user_preference_vectors(total_interactions DESC);
-
--- 유니크 제약
-CREATE UNIQUE INDEX idx_user_mysql_id ON user_preference_vectors(mysql_user_id);
+CREATE INDEX idx_reactions_user_course ON course_reactions(mysql_user_id, mysql_course_id);
+CREATE INDEX idx_reactions_course_type ON course_reactions(mysql_course_id, reaction_type);
 
 -- =====================================================
--- 4. vector_patterns 인덱스
+-- 성능 최적화 설정
 -- =====================================================
 
--- 벡터 검색 인덱스
-CREATE INDEX idx_pattern_emb 
-    ON vector_patterns USING ivfflat (embedding vector_cosine_ops) 
-    WITH (lists = 100);
+-- HNSW 검색 성능 향상
+SET hnsw.ef_search = 40;  -- 검색 시 탐색할 후보 수
 
--- 패턴 검색용 인덱스
-CREATE INDEX idx_pattern_type ON vector_patterns(pattern_type);
-CREATE INDEX idx_pattern_items ON vector_patterns USING gin(items);
-CREATE INDEX idx_pattern_length ON vector_patterns(items_length);
+-- 벡터 연산 최적화
+SET max_parallel_workers_per_gather = 2;
+SET work_mem = '256MB';
 
--- 신뢰도/빈도 인덱스
-CREATE INDEX idx_pattern_confidence ON vector_patterns(confidence DESC);
-CREATE INDEX idx_pattern_occurrence ON vector_patterns(occurrence_count DESC);
-
--- 복합 인덱스 (자주 사용되는 쿼리)
-CREATE INDEX idx_pattern_type_confidence 
-    ON vector_patterns(pattern_type, confidence DESC);
-
--- 메타데이터 인덱스 (JSONB)
-CREATE INDEX idx_pattern_metadata ON vector_patterns USING gin(metadata);
-
-
--- =====================================================
--- 통계 수집 (성능 최적화)
--- =====================================================
-
--- 테이블 통계 수집
+-- 통계 수집 (쿼리 플랜 최적화)
+ANALYZE place_patterns;
 ANALYZE course_vectors;
-ANALYZE place_vectors;
 ANALYZE user_preference_vectors;
-ANALYZE vector_patterns;
+ANALYZE course_reactions;
