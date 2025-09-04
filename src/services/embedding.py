@@ -1,161 +1,156 @@
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict
 import logging
 
+# 로거 설정
 logger = logging.getLogger(__name__)
 
 
 class KoSimCSEEmbeddingService:
-    """Korean-optimized embedding service using KoSimCSE-roberta model."""
+    """한국어 최적화 임베딩 서비스 (KoSimCSE-roberta 모델 사용)"""
     
     def __init__(self, model_name: str = "BM-K/KoSimCSE-roberta-multitask"):
-        """Initialize the embedding service with KoSimCSE-roberta model."""
+        """KoSimCSE-roberta 모델로 임베딩 서비스 초기화"""
         try:
             self.model = SentenceTransformer(model_name)
-            logger.info(f"Loaded embedding model: {model_name}")
+            logger.info(f"임베딩 모델 로드 완료: {model_name}")
         except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
+            logger.error(f"임베딩 모델 로드 실패: {e}")
             raise
     
     def encode_text(self, text: Union[str, List[str]], normalize: bool = True) -> np.ndarray:
         """
-        Encode text into embeddings.
+        텍스트를 임베딩으로 변환
         
         Args:
-            text: Single text or list of texts to encode
-            normalize: Whether to normalize the embeddings for cosine similarity
+            text: 단일 텍스트 또는 텍스트 리스트
+            normalize: 코사인 유사도를 위한 정규화 여부
             
         Returns:
-            Numpy array of embeddings
+            임베딩 numpy 배열
         """
         try:
             embeddings = self.model.encode(text, convert_to_numpy=True)
             
             if normalize:
-                # Normalize for cosine similarity optimization
+                # 코사인 유사도 최적화를 위한 정규화
                 norm = np.linalg.norm(embeddings, axis=-1, keepdims=True)
-                embeddings = embeddings / (norm + 1e-8)  # Add small epsilon to avoid division by zero
+                embeddings = embeddings / (norm + 1e-8)  # 0으로 나누는 것을 방지하기 위한 작은 값 추가
             
             return embeddings
         except Exception as e:
-            logger.error(f"Failed to encode text: {e}")
+            logger.error(f"텍스트 인코딩 실패: {e}")
             raise
     
-    def encode_course_data(self, title: str, description: str, category: str = "") -> dict:
+    def encode_course_data(self, title: str, description: str, category: str = "") -> Dict:
         """
-        Generate embeddings for course data.
+        코스 데이터에 대한 임베딩 생성
         
         Args:
-            title: Course title
-            description: Course description
-            category: Course category (optional)
+            title: 코스 제목
+            description: 코스 설명
+            category: 코스 카테고리 (선택사항)
             
         Returns:
-            Dictionary containing different types of embeddings
+            다양한 유형의 임베딩을 포함한 딕셔너리
         """
         try:
-            # Individual embeddings
+            # 개별 임베딩 (정규화되지 않은 버전)
             title_embedding = self.encode_text(title, normalize=False)
             description_embedding = self.encode_text(description, normalize=False)
             
-            # Combined embedding for comprehensive search
+            # 통합 임베딩 (포괄적 검색용)
             combined_text = f"{title} {description}"
             if category:
                 combined_text += f" {category}"
             combined_embedding = self.encode_text(combined_text, normalize=False)
             
-            # Normalized versions for cosine similarity
-            title_embedding_norm = self.encode_text(title, normalize=True)
-            combined_embedding_norm = self.encode_text(combined_text, normalize=True)
-            
-            # Semantic tags embedding (combining all metadata)
-            semantic_text = f"{title} {description} {category}".strip()
-            semantic_tags = self.encode_text(semantic_text, normalize=False)
-            
+            # 정규화된 임베딩들은 이제 저장하지 않음
             return {
                 "title_embedding": title_embedding.tolist(),
                 "description_embedding": description_embedding.tolist(),
                 "combined_embedding": combined_embedding.tolist(),
-                "title_embedding_norm": title_embedding_norm.tolist(),
-                "combined_embedding_norm": combined_embedding_norm.tolist(),
-                "semantic_tags": semantic_tags.tolist(),
             }
         except Exception as e:
-            logger.error(f"Failed to encode course data: {e}")
+            logger.error(f"코스 데이터 인코딩 실패: {e}")
             raise
     
-    def encode_place_data(self, 
-                         place_name: str, 
-                         category: str = "", 
-                         context: str = "",
-                         latitude: Optional[float] = None,
-                         longitude: Optional[float] = None) -> dict:
+    def encode_user_preference(self, 
+                              preference_texts: List[str], 
+                              category_texts: List[str] = None,
+                              behavior_texts: List[str] = None) -> Dict:
         """
-        Generate embeddings for place data.
+        사용자 선호도 데이터에 대한 임베딩 생성
         
         Args:
-            place_name: Name of the place
-            category: Place category
-            context: Additional context about the place
-            latitude: Place latitude
-            longitude: Place longitude
+            preference_texts: 사용자 선호도를 나타내는 텍스트 리스트
+            category_texts: 카테고리별 선호도 텍스트 (선택사항)
+            behavior_texts: 행동 패턴 텍스트 (선택사항)
             
         Returns:
-            Dictionary containing different types of embeddings
+            사용자 선호도 임베딩을 포함한 딕셔너리
         """
         try:
-            # Place embedding (name + category)
-            place_text = f"{place_name}"
-            if category:
-                place_text += f" {category}"
-            place_embedding = self.encode_text(place_text, normalize=False)
+            # 전체 선호도 임베딩
+            if preference_texts:
+                combined_preference_text = " ".join(preference_texts)
+                preference_embedding = self.encode_text(combined_preference_text, normalize=False)
+            else:
+                # 빈 선호도의 경우 제로 벡터 생성
+                preference_embedding = np.zeros(768)
             
-            # Context embedding
-            context_text = context if context else place_text
-            context_embedding = self.encode_text(context_text, normalize=False)
+            # 카테고리별 선호도 임베딩
+            if category_texts:
+                combined_category_text = " ".join(category_texts)
+                category_preference_embedding = self.encode_text(combined_category_text, normalize=False)
+            else:
+                category_preference_embedding = np.zeros(768)
             
-            # Location vector (normalized lat/lng)
-            location_vector = None
-            if latitude is not None and longitude is not None:
-                # Normalize coordinates to [-1, 1] range
-                # This is a simple normalization; in production, consider more sophisticated methods
-                norm_lat = latitude / 90.0  # Latitude range: -90 to 90
-                norm_lng = longitude / 180.0  # Longitude range: -180 to 180
-                location_vector = [norm_lat, norm_lng]
+            # 행동 패턴 임베딩
+            if behavior_texts:
+                combined_behavior_text = " ".join(behavior_texts)
+                behavior_embedding = self.encode_text(combined_behavior_text, normalize=False)
+            else:
+                behavior_embedding = np.zeros(768)
             
-            # Time-specific embeddings (can be enhanced with actual time-based context)
-            time_contexts = {
-                "morning": f"{place_text} 아침 오전",
-                "afternoon": f"{place_text} 오후 점심",
-                "evening": f"{place_text} 저녁 밤"
+            return {
+                "preference_embedding": preference_embedding.tolist(),
+                "category_preference_embedding": category_preference_embedding.tolist(),
+                "behavior_embedding": behavior_embedding.tolist(),
             }
-            
-            time_embeddings = {}
-            for time_period, time_text in time_contexts.items():
-                time_embeddings[f"{time_period}_embedding"] = self.encode_text(time_text, normalize=False).tolist()
-            
-            result = {
-                "place_embedding": place_embedding.tolist(),
-                "context_embedding": context_embedding.tolist(),
-                **time_embeddings
-            }
-            
-            if location_vector:
-                result["location_vector"] = location_vector
-            
-            return result
             
         except Exception as e:
-            logger.error(f"Failed to encode place data: {e}")
+            logger.error(f"사용자 선호도 데이터 인코딩 실패: {e}")
+            raise
+    
+    def encode_pattern_sequence(self, poi_names: List[str]) -> np.ndarray:
+        """
+        장소 패턴 시퀀스에 대한 임베딩 생성
+        
+        Args:
+            poi_names: 해당 POI 이름들
+            
+        Returns:
+            패턴 임베딩 numpy 배열
+        """
+        try:
+            # POI 이름들을 순서대로 결합하여 패턴 텍스트 생성
+            pattern_text = " → ".join(poi_names)
+            pattern_embedding = self.encode_text(pattern_text, normalize=False)
+            
+            return pattern_embedding
+            
+        except Exception as e:
+            logger.error(f"패턴 시퀀스 인코딩 실패: {e}")
             raise
 
 
-# Global instance
+# 전역 인스턴스
 _embedding_service = None
 
 def get_embedding_service() -> KoSimCSEEmbeddingService:
-    """Get singleton embedding service instance."""
+    """싱글톤 임베딩 서비스 인스턴스 반환"""
     global _embedding_service
     if _embedding_service is None:
         _embedding_service = KoSimCSEEmbeddingService()
