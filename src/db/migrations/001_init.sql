@@ -7,6 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE TABLE place_patterns (
     id SERIAL PRIMARY KEY,
     poi_ids INTEGER[] NOT NULL UNIQUE,  -- 장소 ID 배열 (순서 유지)
+    pattern_embedding vector(768);
 
     -- 사용 통계
     sequence_count INTEGER DEFAULT 0,     -- 이 순서로 방문한 횟수
@@ -32,7 +33,7 @@ CREATE TABLE IF NOT EXISTS course_vectors (
     id SERIAL PRIMARY KEY,
     mysql_course_id INTEGER UNIQUE NOT NULL,
 
-    -- 의미 검색용 임베딩 (정규화된 벡터만 저장)
+    -- 의미 검색용 임베딩 (원본 벡터 저장)
     title_embedding vector(768),
     description_embedding vector(768), 
     combined_embedding vector(768),
@@ -96,6 +97,8 @@ CREATE INDEX idx_place_patterns_poi_ids ON place_patterns USING gin(poi_ids);
 CREATE INDEX idx_place_patterns_first_poi ON place_patterns(first_poi, sequence_score DESC);
 CREATE INDEX idx_place_patterns_last_poi ON place_patterns(last_poi);
 CREATE INDEX idx_place_patterns_length_score ON place_patterns(pattern_length, total_usage DESC);
+CREATE INDEX idx_pattern_embedding ON place_patterns USING hnsw (pattern_embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 
 -- 패턴 점수별 정렬 (추천용)

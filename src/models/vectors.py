@@ -1,8 +1,44 @@
-from sqlalchemy import Column, Integer, String, TIMESTAMP, DECIMAL, FLOAT, Text, ARRAY, text
+from sqlalchemy import Column, Integer, String, TIMESTAMP, FLOAT, ARRAY, Boolean, SmallInteger, ForeignKey, Computed
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
 from .base import Base
+
+
+class PlacePattern(Base):
+    __tablename__ = "place_patterns"
+    
+    id = Column(Integer, primary_key=True)
+    poi_ids = Column(ARRAY(Integer), unique=True, nullable=False)
+    pattern_embedding = Column(Vector(768))
+    
+    # 사용 통계
+    sequence_count = Column(Integer, default=0)
+    relation_count = Column(Integer, default=0)
+    
+    # 점수 (계산된 값)
+    sequence_score = Column(FLOAT, default=0.0)
+    relation_score = Column(FLOAT, default=0.0)
+    
+    # 메타데이터 (검색 최적화용 - computed columns)
+    pattern_length = Column(
+        SmallInteger,
+        Computed("array_length(poi_ids, 1)"),
+        nullable=False
+    )
+    first_poi = Column(
+        Integer,
+        Computed("poi_ids[1]", persisted=True),
+        nullable=False
+    )
+    last_poi = Column(
+        Integer,
+        Computed("poi_ids[array_length(poi_ids, 1)]", persisted=True),
+        nullable=False
+    )
+    
+    created_at = Column(TIMESTAMP, server_default=func.now())
+    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
 
 class CourseVector(Base):
@@ -11,55 +47,23 @@ class CourseVector(Base):
     id = Column(Integer, primary_key=True)
     mysql_course_id = Column(Integer, unique=True, nullable=False)
     
-    # 다각도 의미 검색(제목+설명+카테고리)
+    # 의미 검색용 임베딩 (원본 벡터 저장, 코사인 유사도는 런타임 계산)
     title_embedding = Column(Vector(768))
     description_embedding = Column(Vector(768))
     combined_embedding = Column(Vector(768))
     
+    # 패턴 참조
+    main_pattern_id = Column(Integer, ForeignKey('place_patterns.id', ondelete='SET NULL'))
+    sub_pattern_ids = Column(ARRAY(Integer))
+    
     # 하이브리드 검색용 (벡터 + 필터)
     region = Column(String(50))
-    duration_minutes = Column(Integer)
-    
-    # 의미 검색용 메타데이터
-    semantic_tags = Column(Vector(768))
-    user_profile_embedding = Column(Vector(768))
-    
-    # 검색 최적화용 정규화된 벡터 (코사인 유사도 최적화)
-    title_embedding_norm = Column(Vector(768))
-    description_embedding_norm = Column(Vector(768))
-    combined_embedding_norm = Column(Vector(768))
-    
-    created_at = Column(TIMESTAMP, server_default=func.now())
-    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
-
-
-class PlaceVector(Base):
-    __tablename__ = "place_vectors"
-    
-    id = Column(Integer, primary_key=True)
-    poi_id = Column(Integer, unique=True, nullable=False)
-    
-    # 장소 임베딩
-    place_embedding = Column(Vector(768))
-    context_embedding = Column(Vector(768))
-    
-    # 위치 벡터 (지리적 유사도)
-    location_vector = Column(Vector(2))
-    latitude = Column(DECIMAL(10, 8))
-    longitude = Column(DECIMAL(11, 8))
-    
-    # 시간대별 임베딩 (시간 맥락 추천)
-    morning_embedding = Column(Vector(768))
-    afternoon_embedding = Column(Vector(768))
-    evening_embedding = Column(Vector(768))
-    
-    # 하이브리드 검색용
     category = Column(String(100))
-    region = Column(String(50))
-    popularity_score = Column(FLOAT, default=0)
     
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+
+
 
 
 class UserPreferenceVector(Base):
@@ -68,45 +72,33 @@ class UserPreferenceVector(Base):
     id = Column(Integer, primary_key=True)
     mysql_user_id = Column(Integer, unique=True, nullable=False)
     
-    # 사용자 선호도 임베딩 (학습된)
+    # 사용자 선호도 임베딩
     preference_embedding = Column(Vector(768))
-    
-    # 카테고리별 선호 벡터
     category_preference_embedding = Column(Vector(768))
-    
-    # 행동 패턴 임베딩
     behavior_embedding = Column(Vector(768))
     
-    # 동적 컨텍스트 임베딩
-    recent_context_embedding = Column(Vector(768))
-    
-    # 선호도 강도 (가중치)
-    preference_weights = Column(JSONB, default=lambda: {})
+    # 선호도 가중치 (0.0 ~ 1.0)
+    preference_weight = Column(FLOAT, default=0.4)
+    category_weight = Column(FLOAT, default=0.3)
+    behavior_weight = Column(FLOAT, default=0.3)
     
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
 
-class VectorPattern(Base):
-    __tablename__ = "vector_patterns"
+class CourseReaction(Base):
+    __tablename__ = "course_reactions"
     
     id = Column(Integer, primary_key=True)
+    mysql_user_id = Column(Integer, nullable=False)
+    mysql_course_id = Column(Integer, nullable=False)
     
-    # 패턴 식별
-    pattern_key = Column(String(255), unique=True, nullable=False)
-    pattern_type = Column(String(50), nullable=False)
+    # 반응 정보
+    reaction_type = Column(String(50), nullable=False)
+    rating = Column(Integer)
     
-    # 데이터
-    items = Column(ARRAY(Integer), nullable=False)
-    items_length = Column(Integer)
-    embedding = Column(Vector(768))
-    
-    # 학습 정보
-    occurrence_count = Column(Integer, default=1)
-    confidence = Column(FLOAT, default=0.5)
-    
-    # 메타데이터
-    metadata_ = Column(JSONB, default=lambda: {})
+    # 가중치 계산 정보
+    weight_applied = Column(Boolean, default=False)
+    weight_value = Column(FLOAT, default=0.0)
     
     created_at = Column(TIMESTAMP, server_default=func.now())
-    updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
