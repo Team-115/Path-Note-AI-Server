@@ -117,14 +117,11 @@ CREATE INDEX idx_course_sub_patterns ON course_vectors USING gin(sub_pattern_ids
 
 -- 하이브리드 검색용 복합 인덱스
 CREATE INDEX idx_course_region_category ON course_vectors(region, category);
-CREATE INDEX idx_course_difficulty_duration ON course_vectors(difficulty_level, duration_minutes);
 
 -- 3. user_preference_vectors 인덱스
 CREATE INDEX idx_user_preference_embedding 
     ON user_preference_vectors USING hnsw (preference_embedding vector_cosine_ops)
     WITH (m = 8, ef_construction = 32);  -- 사용자 데이터는 상대적으로 적으므로 작은 값
-
-CREATE INDEX idx_user_last_interaction ON user_preference_vectors(last_interaction_at DESC);
 
 -- 4. course_reactions 인덱스 (배치 처리 최적화)
 CREATE INDEX idx_reactions_unprocessed ON course_reactions(weight_applied, created_at) 

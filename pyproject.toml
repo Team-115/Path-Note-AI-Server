@@ -14,22 +14,19 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
-    
     # 데이터베이스
     "sqlalchemy>=2.0.0",
     "supabase>=2.4.0",
     "asyncpg>=0.29.0",
     "pgvector>=0.2.4",
-    
     # 환경 설정
     "python-dotenv>=1.0.0",
-    
     # HTTP 클라이언트
     "httpx>=0.26.0",
-    
     # 보안
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
+    "sentence-transformers>=5.1.0",
 ]
 
 [project.optional-dependencies]
