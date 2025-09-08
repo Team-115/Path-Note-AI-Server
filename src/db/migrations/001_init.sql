@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE TABLE place_patterns (
     id SERIAL PRIMARY KEY,
     poi_ids INTEGER[] NOT NULL UNIQUE,  -- 장소 ID 배열 (순서 유지)
-    pattern_embedding vector(768);
+    pattern_embedding vector(768),
 
     -- 사용 통계
     sequence_count INTEGER DEFAULT 0,     -- 이 순서로 방문한 횟수
