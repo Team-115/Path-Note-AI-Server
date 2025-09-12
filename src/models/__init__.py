@@ -1,4 +1,4 @@
 from .base import Base
-from .vectors import PlacePattern, CourseVector, UserPreferenceVector, CourseReaction
+from .database_models import Course, User, Place, CoursePlace, Like, Comment, PlacePattern
 
-__all__ = ["Base", "PlacePattern", "CourseVector", "UserPreferenceVector", "CourseReaction"]
+__all__ = ["Base", "Course", "User", "Place", "CoursePlace", "Like", "Comment", "PlacePattern"]

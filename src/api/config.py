@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     api_title: str = "Travel AI Search API"
     
     # Database - PostgreSQL with docker-compose
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/travel_ai"
+    database_url: str = "postgresql+asyncpg://pathnote_user:12345@localhost:5432/pathnote"
     database_pool_size: int = 10
     database_max_overflow: int = 20
     database_echo: bool = False

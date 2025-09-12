@@ -30,6 +30,8 @@ dependencies = [
     "sentence-transformers>=5.1.0",
     "numpy>=1.26.0",
     "markupsafe==2.0.1",
+    # 스케줄링
+    "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]
