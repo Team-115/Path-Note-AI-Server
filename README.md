@@ -27,6 +27,7 @@ docker ps
 
 4. 실행:
 ```bash
+source .venv/Scripts/activate
 uvicorn src.api.main:app --reload
 ```
 
