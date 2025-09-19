@@ -10,6 +10,7 @@ AI-powered semantic search API server for travel platforms.
 
 2. Backend setting:
 ```bash
+uv venv
 source .venv/Scripts/activate
 uv pip install -r pyproject.toml
 (or)

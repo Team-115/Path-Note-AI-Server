@@ -39,16 +39,15 @@ class EmbeddingResponse(BaseModel):
 
 
 class CourseEmbeddingRequest(BaseModel):
-    """Request model for course embedding generation via WebClient."""
-    course_name: str = Field(..., description="Name/title of the course")
-    course_description: str = Field(..., description="Description of the course")
-    category: Optional[str] = Field(None, description="Course category")
+    """사용자가 Spring에 보낸 단일 검색어를 받기 위한 모델"""
+    keyword: str = Field(..., description="사용자 입력 검색어")
     
 
 class CourseEmbeddingResponse(BaseModel):
-    """Response model for course embedding operations."""
-    course_name: str = Field(description="Name/title of the course")
-    course_description: str = Field(description="Description of the course")
-    category: Optional[str] = Field(None, description="Course category")
-    embeddings: dict = Field(description="Generated embeddings (title, description, combined)")
-    processing_time_ms: float = Field(description="Processing time in milliseconds")
+    """검색어 분석 결과 및 임베딩 벡터 응답 모델"""
+    course_name: str
+    course_description: str
+    category: Optional[str]
+    # embeddings 필드의 구조를 명확히 함
+    embeddings: dict[str, List[float]] = Field(description="생성된 검색어 임베딩 벡터")
+    processing_time_ms: Optional[float] = Field(None) # 임베딩 생성에 걸린 시간

@@ -113,28 +113,28 @@ async def generate_course_embeddings(course_data: CourseEmbeddingRequest):
     start_time = time.time()
     
     try:
-        # 임베딩 서비스로 벡터 생성
         embedding_service = get_embedding_service()
-        embeddings = embedding_service.encode_course_data(
-            title=course_data.course_name,
-            description=course_data.course_description,
-            category=course_data.category or ""
+        
+        result = embedding_service.encode_search_query(
+            keyword=course_data.keyword
         )
         
         processing_time = (time.time() - start_time) * 1000  # ms 단위
         
+        # SearchEmbeddingResponse 형식에 맞춰 응답 반환
         return CourseEmbeddingResponse(
-            course_name=course_data.course_name,
-            course_description=course_data.course_description,
-            embeddings=embeddings,
+            course_name=result["course_name"],
+            course_description=result["course_description"],
+            category=result["category"],
+            embeddings=result["embeddings"],
             processing_time_ms=processing_time
         )
         
     except Exception as e:
-        logger.error(f"코스 임베딩 생성 실패: {e}")
+        logger.error(f"검색어 임베딩 생성 실패: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate course embeddings: {str(e)}"
+            detail=f"Failed to generate search embeddings: {str(e)}"
         )
 
 # 코스 관련 API  

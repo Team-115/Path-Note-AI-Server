@@ -140,11 +140,69 @@ class KoSimCSEEmbeddingService:
             pattern_embedding = self.encode_text(pattern_text, normalize=False)
             
             return pattern_embedding
-            
         except Exception as e:
             logger.error(f"패턴 시퀀스 인코딩 실패: {e}")
             raise
+        
+    def encode_search_query(self, keyword: str) -> Dict:
+        """
+        사용자 검색어(keyword)를 분석하여 임베딩을 위한 '가상 코스' 필드를 생성하고 벡터를 반환합니다.
 
+        Args:
+            keyword: 사용자 검색어
+
+        Returns:
+            분석된 필드와 임베딩 벡터를 포함한 딕셔너리 (FastAPI 응답 DTO에 매핑됨)
+        """
+
+        # 1. 텍스트 분리 및 분석 로직 (NLP 기반의 역할)
+        # ----------------------------------------------------
+        # title: 전체 검색어를 대표 이름으로 사용
+        title = f"사용자 검색: {keyword}" 
+
+        # description: 검색어를 그대로 설명으로 사용 (가장 높은 의미적 연관성 유지)
+        description = keyword
+
+        # category: 내부 추론 함수를 통해 추론
+        category = self._infer_category_from_keyword(keyword)
+        # ----------------------------------------------------
+
+        try:
+            # 2. 통합 임베딩 생성 (기존 encode_course_data 로직과 유사)
+            combined_text = f"{title} {description}"
+            if category:
+                combined_text += f" {category}"
+
+            # KoSimCSE 모델을 사용하여 의미 기반 분석 및 벡터 생성
+            combined_embedding = self.encode_text(combined_text, normalize=False)
+
+            # 3. Spring에 반환할 형태로 데이터 구조화
+            return {
+                "course_name": title,
+                "course_description": description,
+                "category": category,
+                "embeddings": {
+                    # 검색 쿼리는 주로 하나의 통합 벡터만 사용합니다.
+                    "search_query_combined": combined_embedding.tolist(),
+                }
+            }
+        except Exception as e:
+            logger.error(f"검색어 인코딩 실패: {e}")
+            raise
+
+    def _infer_category_from_keyword(self, keyword: str) -> Optional[str]:
+        """
+        (가정) 단순 규칙 기반으로 키워드에서 카테고리를 추론하는 내부 함수
+        실제 서비스에서는 복잡한 맵핑 테이블, 분류 모델 또는 NER이 필요합니다.
+        """
+        keyword_lower = keyword.lower()
+        if '맛집' in keyword_lower or '카페' in keyword_lower or '식당' in keyword_lower:
+            return "음식/식도락"
+        if '등산' in keyword_lower or '트레킹' in keyword_lower or '자전거' in keyword_lower:
+            return "액티비티/운동"
+        if '역사' in keyword_lower or '박물관' in keyword_lower or '전시' in keyword_lower:
+            return "문화/역사"
+        return None
 
 # 전역 인스턴스
 _embedding_service = None
