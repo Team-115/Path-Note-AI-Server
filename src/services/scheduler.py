@@ -112,7 +112,7 @@ class EmbeddingScheduler:
             embeddings = embedding_service.encode_course_data(
                 title=course.course_name or "",
                 description=course.course_description or "",
-                category=course.course_category or ""
+                category=course.category_id or ""
             )
             
             # PostgreSQL에서 임베딩 업데이트

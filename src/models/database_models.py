@@ -43,7 +43,7 @@ class Course(Base):
     course_name = Column(String(100), nullable=False)
     user_id = Column(BigInteger, ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
     course_description = Column(Text)
-    course_category = Column(String(50))
+    category_id = Column(ForeignKey("categories.category_id"))
     embedding_vector = Column(Vector(768))
     created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
     
